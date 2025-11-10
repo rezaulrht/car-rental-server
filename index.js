@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -33,9 +33,59 @@ async function run() {
       const query = { email: user.email };
       const existingUser = await usersCollection.findOne(query);
       if (existingUser) {
-        return res.send({ message: "User already exists"});
+        return res.send({ message: "User already exists" });
       }
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    // Cars API
+    // POST - Add a new car (Private)
+    app.post("/api/cars", async (req, res) => {
+      const car = req.body;
+      const result = await carsCollection.insertOne(car);
+      res.send(result);
+    });
+
+    // GET - Get all cars (Public)
+    app.get("/api/cars", async (req, res) => {
+      const cars = await carsCollection.find().toArray();
+      res.send(cars);
+    });
+
+    // GET - Get a specific car's details (Public)
+    app.get("/api/cars/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const car = await carsCollection.findOne(query);
+      res.send(car);
+    });
+
+    // GET - Get cars created by logged-in provider (Private)
+    app.get("/api/cars/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { providerEmail: email };
+      const cars = await carsCollection.find(query).toArray();
+      res.send(cars);
+    });
+
+    // PUT - Update existing car (Private)
+    app.put("/api/cars/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedCar = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: updatedCar,
+      };
+      const result = await carsCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // DELETE - Delete a car (Private)
+    app.delete("/api/cars/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await carsCollection.deleteOne(query);
       res.send(result);
     });
 
