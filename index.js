@@ -26,6 +26,7 @@ async function run() {
     const db = client.db("rentalwheels");
     const usersCollection = db.collection("users");
     const carsCollection = db.collection("cars");
+    const bookingsCollection = db.collection("bookings");
 
     //users api
     app.post("/users", async (req, res) => {
@@ -87,6 +88,22 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await carsCollection.deleteOne(query);
       res.send(result);
+    });
+
+    // Bookings API
+    // POST - Book a car (Private)
+    app.post("/api/bookings", async (req, res) => {
+      const booking = req.body;
+      const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
+    });
+
+    // GET - Get bookings by user email (Private)
+    app.get("/api/bookings/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { userEmail: email };
+      const bookings = await bookingsCollection.find(query).toArray();
+      res.send(bookings);
     });
 
     // Send a ping to confirm a successful connection
