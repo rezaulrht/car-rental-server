@@ -29,33 +29,33 @@ async function run() {
     const bookingsCollection = db.collection("bookings");
 
     //users api
+    app.get("/users", async (req, res) => {
+      const cursor = usersCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
       const query = { email: user.email };
-      const existingUser = await usersCollection.findOne(query);
-      if (existingUser) {
-        return res.send({ message: "User already exists" });
-      }
-      const result = await usersCollection.insertOne(user);
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: user,
+      };
+      const result = await usersCollection.updateOne(query, updateDoc, options);
       res.send(result);
     });
 
     // Cars API
     // POST - Add a new car (Private)
-    app.post("/api/cars", async (req, res) => {
+    app.post("/cars", async (req, res) => {
       const car = req.body;
       const result = await carsCollection.insertOne(car);
       res.send(result);
     });
 
-    // GET - Get all cars (Public)
-    app.get("/api/cars", async (req, res) => {
-      const cars = await carsCollection.find().toArray();
-      res.send(cars);
-    });
-
     // GET - Get a specific car's details (Public)
-    app.get("/api/cars/:id", async (req, res) => {
+    app.get("/cars/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const car = await carsCollection.findOne(query);
@@ -63,15 +63,18 @@ async function run() {
     });
 
     // GET - Get cars created by logged-in provider (Private)
-    app.get("/api/cars/user/:email", async (req, res) => {
-      const email = req.params.email;
-      const query = { providerEmail: email };
+    app.get("/cars", async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if(email){
+        query.providerEmail = email;
+      }
       const cars = await carsCollection.find(query).toArray();
       res.send(cars);
     });
 
     // PUT - Update existing car (Private)
-    app.put("/api/cars/:id", async (req, res) => {
+    app.put("/cars/:id", async (req, res) => {
       const id = req.params.id;
       const updatedCar = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -83,7 +86,7 @@ async function run() {
     });
 
     // DELETE - Delete a car (Private)
-    app.delete("/api/cars/:id", async (req, res) => {
+    app.delete("/cars/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await carsCollection.deleteOne(query);
@@ -92,20 +95,20 @@ async function run() {
 
     // Bookings API
     // POST - Book a car (Private)
-    app.post("/api/bookings", async (req, res) => {
+    app.post("/bookings", async (req, res) => {
       const booking = req.body;
       const result = await bookingsCollection.insertOne(booking);
       res.send(result);
     });
 
     // GET - Get bookings by user email (Private)
-    app.get("/api/bookings/:email", async (req, res) => {
+    app.get("/bookings/:email", async (req, res) => {
       const email = req.params.email;
       const query = { userEmail: email };
       const bookings = await bookingsCollection.find(query).toArray();
       res.send(bookings);
     });
-
+    
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
