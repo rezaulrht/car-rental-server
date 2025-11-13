@@ -65,10 +65,18 @@ async function run() {
     // GET - Get cars created by logged-in provider (Private)
     app.get("/cars", async (req, res) => {
       const email = req.query.email;
+      const searchQuery = req.query.search;
+
       const query = {};
+
       if (email) {
         query.providerEmail = email;
       }
+
+      if (searchQuery) {
+        query.carName = { $regex: searchQuery, $options: "i" }; 
+      }
+
       const cars = await carsCollection.find(query).toArray();
       res.send(cars);
     });
