@@ -8,7 +8,9 @@ dotenv.config();
 const admin = require("firebase-admin");
 
 const uri = process.env.URI;
-const serviceAccount = require("./rentwheel-firebase-admin.json");
+// index.js
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -46,8 +48,8 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // // Connect the client to the server	(optional starting in v4.7)
+    // await client.connect();
     const db = client.db("rentalwheels");
     const usersCollection = db.collection("users");
     const carsCollection = db.collection("cars");
@@ -215,11 +217,11 @@ async function run() {
       res.send(result);
     });
 
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // // Send a ping to confirm a successful connection
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
     app.listen(port, () => {
       console.log(`Server is running on port: ${port}`);
     });
