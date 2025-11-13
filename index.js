@@ -9,7 +9,9 @@ const admin = require("firebase-admin");
 
 const uri = process.env.URI;
 // index.js
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
@@ -98,10 +100,7 @@ async function run() {
       const query = {};
 
       if (uid) {
-        query.$or = [
-          { providerUid: uid },
-          { providerId: uid }
-        ];
+        query.$or = [{ providerUid: uid }, { providerId: uid }];
       }
 
       if (searchQuery) {
@@ -123,7 +122,10 @@ async function run() {
       if (!existingCar) {
         return res.status(404).send({ message: "Car not found" });
       }
-      if (existingCar.providerUid !== req.user.uid && existingCar.providerId !== req.user.uid) {
+      if (
+        existingCar.providerUid !== req.user.uid &&
+        existingCar.providerId !== req.user.uid
+      ) {
         return res
           .status(403)
           .send({ message: "Forbidden: You can only update your own cars" });
@@ -160,7 +162,10 @@ async function run() {
       if (!existingCar) {
         return res.status(404).send({ message: "Car not found" });
       }
-      if (existingCar.providerUid !== req.user.uid && existingCar.providerId !== req.user.uid) {
+      if (
+        existingCar.providerUid !== req.user.uid &&
+        existingCar.providerId !== req.user.uid
+      ) {
         return res
           .status(403)
           .send({ message: "Forbidden: You can only delete your own cars" });
