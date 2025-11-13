@@ -91,15 +91,17 @@ async function run() {
       res.send(car);
     });
 
-    // Public
     app.get("/cars", async (req, res) => {
-      const email = req.query.email;
+      const uid = req.query.uid;
       const searchQuery = req.query.search;
 
       const query = {};
 
-      if (email) {
-        query.providerEmail = email;
+      if (uid) {
+        query.$or = [
+          { providerUid: uid },
+          { providerId: uid }
+        ];
       }
 
       if (searchQuery) {
@@ -121,7 +123,7 @@ async function run() {
       if (!existingCar) {
         return res.status(404).send({ message: "Car not found" });
       }
-      if (existingCar.providerEmail !== req.user.email) {
+      if (existingCar.providerUid !== req.user.uid && existingCar.providerId !== req.user.uid) {
         return res
           .status(403)
           .send({ message: "Forbidden: You can only update your own cars" });
@@ -158,7 +160,7 @@ async function run() {
       if (!existingCar) {
         return res.status(404).send({ message: "Car not found" });
       }
-      if (existingCar.providerEmail !== req.user.email) {
+      if (existingCar.providerUid !== req.user.uid && existingCar.providerId !== req.user.uid) {
         return res
           .status(403)
           .send({ message: "Forbidden: You can only delete your own cars" });
