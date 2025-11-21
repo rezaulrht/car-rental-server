@@ -77,6 +77,38 @@ async function run() {
       res.send(result);
     });
 
+    // Public - Get User by UID
+    app.get("/users/:uid", async (req, res) => {
+      const uid = req.params.uid;
+      const query = { uid: uid };
+      const user = await usersCollection.findOne(query);
+      if (!user) {
+        return res.status(404).send({ message: "User not found" });
+      }
+      res.send(user);
+    });
+
+    // Private - Update User by UID
+    app.patch("/users/:uid", verifyFirebaseToken, async (req, res) => {
+      const uid = req.params.uid;
+      const { displayName, photoURL } = req.body;
+
+      if (uid !== req.user.uid) {
+        return res.status(403).send({ message: "Forbidden: You can only update your own profile" });
+      }
+
+      const filter = { uid: uid };
+      const updateDoc = {
+        $set: {
+          displayName,
+          photoURL
+        }
+      };
+      
+      const result = await usersCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
     // Cars API
     // Private
     app.post("/cars", verifyFirebaseToken, async (req, res) => {
