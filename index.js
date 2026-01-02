@@ -109,6 +109,33 @@ async function run() {
       res.send(result);
     });
 
+    // Private - Get User Earnings
+    app.get("/users/:uid/earnings", verifyFirebaseToken, async (req, res) => {
+      const uid = req.params.uid;
+
+      if (uid !== req.user.uid) {
+        return res.status(403).send({ message: "Forbidden: You can only view your own earnings" });
+      }
+
+      const cars = await carsCollection.find({ 
+        $or: [{ providerUid: uid }, { providerId: uid }] 
+      }).toArray();
+
+      const carIds = cars.map(car => car._id.toString());
+
+      if (carIds.length === 0) {
+        return res.send({ totalEarnings: 0 });
+      }
+
+      const bookings = await bookingsCollection.find({
+        carId: { $in: carIds }
+      }).toArray();
+
+      const totalEarnings = bookings.reduce((sum, booking) => sum + Number(booking.totalPrice), 0);
+
+      res.send({ totalEarnings });
+    });
+
     // Cars API
     // Private
     app.post("/cars", verifyFirebaseToken, async (req, res) => {
