@@ -39,6 +39,28 @@ const verifyFirebaseToken = async (req, res, next) => {
     return res.status(401).send({ message: "unauthorized access" });
   }
 };
+
+const verifyAdmin = async (req, res, next) => {
+  try {
+    // First verify the Firebase token
+    if (!req.user) {
+      return res.status(401).send({ message: "unauthorized access" });
+    }
+
+    // Then check if user has admin role in database
+    const user = await client.db("rentalwheels").collection("users").findOne({ 
+      uid: req.user.uid 
+    });
+
+    if (!user || user.role !== "admin") {
+      return res.status(403).send({ message: "forbidden: admin access required" });
+    }
+
+    next();
+  } catch (error) {
+    return res.status(500).send({ message: "error verifying admin status" });
+  }
+};
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
@@ -70,8 +92,16 @@ async function run() {
       const user = req.body;
       const query = { email: user.email };
       const options = { upsert: true };
+      
+      // Add role field - default to 'user' if not specified
       const updateDoc = {
-        $set: user,
+        $set: {
+          ...user,
+          role: user.role || "user",
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
       };
       const result = await usersCollection.updateOne(query, updateDoc, options);
       res.send(result);
@@ -134,6 +164,194 @@ async function run() {
       const totalEarnings = bookings.reduce((sum, booking) => sum + Number(booking.totalPrice), 0);
 
       res.send({ totalEarnings });
+    });
+
+    // ============================================
+    // ADMIN ROUTES - User Management
+    // ============================================
+
+    // Admin - Get All Users
+    app.get("/admin/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const users = await usersCollection.find().toArray();
+        res.send(users);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching users" });
+      }
+    });
+
+    // Admin - Get User Statistics
+    app.get("/admin/users/stats", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const totalUsers = await usersCollection.countDocuments();
+        const adminUsers = await usersCollection.countDocuments({ role: "admin" });
+        const regularUsers = await usersCollection.countDocuments({ role: "user" });
+
+        res.send({
+          totalUsers,
+          adminUsers,
+          regularUsers,
+        });
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching user statistics" });
+      }
+    });
+
+    // Admin - Change User Role
+    app.patch("/admin/users/:uid/role", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const uid = req.params.uid;
+        const { role } = req.body;
+
+        if (!["user", "admin"].includes(role)) {
+          return res.status(400).send({ message: "Invalid role. Must be 'user' or 'admin'" });
+        }
+
+        const filter = { uid: uid };
+        const updateDoc = {
+          $set: { role: role },
+        };
+
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send({ message: "User role updated successfully", result });
+      } catch (error) {
+        res.status(500).send({ message: "Error updating user role" });
+      }
+    });
+
+    // ============================================
+    // ADMIN ROUTES - Car Management
+    // ============================================
+
+    // Admin - Get All Cars
+    app.get("/admin/cars", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const cars = await carsCollection.find().toArray();
+        res.send(cars);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching cars" });
+      }
+    });
+
+    // Admin - Delete Any Car
+    app.delete("/admin/cars/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await carsCollection.deleteOne(query);
+        
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Car not found" });
+        }
+
+        res.send({ message: "Car deleted successfully", result });
+      } catch (error) {
+        res.status(500).send({ message: "Error deleting car" });
+      }
+    });
+
+    // Admin - Update Any Car
+    app.patch("/admin/cars/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedData = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: updatedData,
+        };
+
+        const result = await carsCollection.updateOne(filter, updateDoc);
+        
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Car not found" });
+        }
+
+        res.send({ message: "Car updated successfully", result });
+      } catch (error) {
+        res.status(500).send({ message: "Error updating car" });
+      }
+    });
+
+    // ============================================
+    // ADMIN ROUTES - Booking Management
+    // ============================================
+
+    // Admin - Get All Bookings
+    app.get("/admin/bookings", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const bookings = await bookingsCollection.find().toArray();
+        res.send(bookings);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching bookings" });
+      }
+    });
+
+    // Admin - Delete Any Booking
+    app.delete("/admin/bookings/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await bookingsCollection.deleteOne(query);
+        
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Booking not found" });
+        }
+
+        res.send({ message: "Booking deleted successfully", result });
+      } catch (error) {
+        res.status(500).send({ message: "Error deleting booking" });
+      }
+    });
+
+    // ============================================
+    // ADMIN ROUTES - Platform Statistics
+    // ============================================
+
+    // Admin - Get Platform Statistics
+    app.get("/admin/stats", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+      try {
+        const totalUsers = await usersCollection.countDocuments();
+        const totalCars = await carsCollection.countDocuments();
+        const totalBookings = await bookingsCollection.countDocuments();
+        
+        const availableCars = await carsCollection.countDocuments({ status: "Available" });
+        const bookedCars = await carsCollection.countDocuments({ status: "Booked" });
+
+        // Calculate total revenue
+        const bookings = await bookingsCollection.find().toArray();
+        const totalRevenue = bookings.reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
+
+        // Get category distribution
+        const cars = await carsCollection.find().toArray();
+        const categoryMap = {};
+        cars.forEach((car) => {
+          const category = car.category || "Other";
+          categoryMap[category] = (categoryMap[category] || 0) + 1;
+        });
+
+        const carsByCategory = Object.keys(categoryMap).map((category) => ({
+          name: category,
+          value: categoryMap[category],
+        }));
+
+        res.send({
+          totalUsers,
+          totalCars,
+          totalBookings,
+          availableCars,
+          bookedCars,
+          totalRevenue,
+          carsByCategory,
+        });
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching platform statistics" });
+      }
     });
 
     // Cars API
@@ -288,9 +506,6 @@ async function run() {
     // console.log(
     //   "Pinged your deployment. You successfully connected to MongoDB!"
     // );
-    app.listen(port, () => {
-      console.log(`Server is running on port: ${port}`);
-    });
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
@@ -300,4 +515,8 @@ run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("Rental Wheels Server is running");
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port: ${port}`);
 });
