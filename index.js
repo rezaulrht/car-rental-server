@@ -81,6 +81,36 @@ async function run() {
     const carsCollection = db.collection("cars");
     const bookingsCollection = db.collection("bookings");
 
+    const updateExpiredBookings = async () => {
+      const today = new Date().toISOString().split("T")[0];
+
+      const expiredBookings = await bookingsCollection
+        .find({
+          endDate: { $lt: today },
+          status: "Confirmed",
+        })
+        .toArray();
+
+      for (const booking of expiredBookings) {
+        await carsCollection.updateOne(
+          { _id: new ObjectId(booking.carId) },
+          { $set: { status: "Available", availability: "available" } }
+        );
+
+        await bookingsCollection.updateOne(
+          { _id: booking._id },
+          { $set: { status: "Completed" } }
+        );
+      }
+
+      if (expiredBookings.length > 0) {
+        console.log(`Updated ${expiredBookings.length} expired bookings`);
+      }
+    };
+
+    setInterval(updateExpiredBookings, 24 * 60 * 60 * 1000);
+    updateExpiredBookings();
+
     //users api
     // Public
     app.get("/users", async (req, res) => {
@@ -270,8 +300,19 @@ async function run() {
       async (req, res) => {
         try {
           const cars = await carsCollection.find().toArray();
-          res.send(cars);
+
+          const carsWithBookingCount = await Promise.all(
+            cars.map(async (car) => {
+              const bookingCount = await bookingsCollection.countDocuments({
+                carId: car._id.toString(),
+              });
+              return { ...car, bookingCount };
+            })
+          );
+
+          res.send(carsWithBookingCount);
         } catch (error) {
+          console.error("Error fetching cars:", error);
           res.status(500).send({ message: "Error fetching cars" });
         }
       }
@@ -341,6 +382,7 @@ async function run() {
           const bookings = await bookingsCollection.find().toArray();
           res.send(bookings);
         } catch (error) {
+          console.error("Error fetching bookings:", error);
           res.status(500).send({ message: "Error fetching bookings" });
         }
       }
