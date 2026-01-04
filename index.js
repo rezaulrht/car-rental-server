@@ -80,6 +80,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const carsCollection = db.collection("cars");
     const bookingsCollection = db.collection("bookings");
+    const reviewsCollection = db.collection("reviews");
 
     const updateExpiredBookings = async () => {
       const today = new Date().toISOString().split("T")[0];
@@ -508,6 +509,35 @@ async function run() {
       res.send(cars);
     });
 
+    // Get related cars by category
+    app.get("/cars/:id/related", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const currentCar = await carsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!currentCar) {
+          return res.status(404).send({ message: "Car not found" });
+        }
+
+        const relatedCars = await carsCollection
+          .find({
+            category: currentCar.category,
+            _id: { $ne: new ObjectId(id) },
+            status: "Available",
+          })
+          .limit(4)
+          .toArray();
+
+        res.send(relatedCars);
+      } catch (error) {
+        console.error("Error fetching related cars:", error);
+        res.status(500).send({ message: "Error fetching related cars" });
+      }
+    });
+
     // Private
     app.put("/cars/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
@@ -620,6 +650,257 @@ async function run() {
       const result = await bookingsCollection.deleteOne(query);
       res.send(result);
     });
+
+    // ============================================
+    // REVIEWS API
+    // ============================================
+
+    // Public - Get reviews for a car or user
+    app.get("/reviews", async (req, res) => {
+      const carId = req.query.carId;
+      const userId = req.query.userId;
+
+      let query = {};
+
+      if (carId) {
+        query.carId = carId;
+      } else if (userId) {
+        query.renterId = userId;
+      }
+
+      const reviews = await reviewsCollection
+        .find(query)
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      // Enrich reviews with car details if missing
+      const enrichedReviews = await Promise.all(
+        reviews.map(async (review) => {
+          // If review doesn't have car details, fetch them
+          if (!review.carName || !review.carImage) {
+            const car = await carsCollection.findOne({
+              _id: new ObjectId(review.carId),
+            });
+            if (car) {
+              review.carName = car.carName;
+              review.carImage = car.imageURL;
+            }
+          }
+          return review;
+        })
+      );
+
+      res.send(enrichedReviews);
+    });
+
+    // Private - Add new review (check if user booked the car)
+    app.post("/reviews", verifyFirebaseToken, async (req, res) => {
+      const { carId, rating, comment, bookingId } = req.body;
+      const renterId = req.user.uid;
+
+      // Validate required fields
+      if (!carId || !rating || !bookingId) {
+        return res.status(400).send({
+          message: "carId, rating, and bookingId are required",
+        });
+      }
+
+      // Validate rating range
+      if (rating < 1 || rating > 5) {
+        return res
+          .status(400)
+          .send({ message: "Rating must be between 1 and 5" });
+      }
+
+      try {
+        // Check if booking exists and belongs to user
+        const booking = await bookingsCollection.findOne({
+          _id: new ObjectId(bookingId),
+          renterId: renterId,
+          carId: carId,
+        });
+
+        if (!booking) {
+          return res.status(404).send({
+            message: "Booking not found or does not belong to you",
+          });
+        }
+
+        // Check if booking is completed
+        if (booking.status !== "Completed") {
+          return res.status(400).send({
+            message: "You can only review completed rentals",
+          });
+        }
+
+        // Check if user already reviewed this booking
+        const existingReview = await reviewsCollection.findOne({
+          bookingId: bookingId,
+          renterId: renterId,
+        });
+
+        if (existingReview) {
+          return res.status(400).send({
+            message: "You have already reviewed this rental",
+          });
+        }
+
+        // Get user details
+        const user = await usersCollection.findOne({ uid: renterId });
+
+        // Get car details
+        const car = await carsCollection.findOne({ _id: new ObjectId(carId) });
+
+        if (!car) {
+          return res.status(404).send({ message: "Car not found" });
+        }
+
+        // Create review
+        const review = {
+          carId,
+          carName: car.carName,
+          carImage: car.imageURL,
+          renterId,
+          userName: user?.displayName || "Anonymous",
+          userPhoto: user?.photoURL || null,
+          rating: Number(rating),
+          comment: comment || "",
+          bookingId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const result = await reviewsCollection.insertOne(review);
+        res.send(result);
+      } catch (error) {
+        console.error("Error creating review:", error);
+        res.status(500).send({ message: "Error creating review" });
+      }
+    });
+
+    // Private - Update own review
+    app.put("/reviews/:id", verifyFirebaseToken, async (req, res) => {
+      const id = req.params.id;
+      const { rating, comment } = req.body;
+      const renterId = req.user.uid;
+
+      // Validate rating if provided
+      if (rating && (rating < 1 || rating > 5)) {
+        return res
+          .status(400)
+          .send({ message: "Rating must be between 1 and 5" });
+      }
+
+      try {
+        const existingReview = await reviewsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!existingReview) {
+          return res.status(404).send({ message: "Review not found" });
+        }
+
+        if (existingReview.renterId !== renterId) {
+          return res.status(403).send({
+            message: "Forbidden: You can only update your own reviews",
+          });
+        }
+
+        const updateDoc = {
+          $set: {
+            ...(rating && { rating: Number(rating) }),
+            ...(comment !== undefined && { comment }),
+            updatedAt: new Date(),
+          },
+        };
+
+        const result = await reviewsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error updating review:", error);
+        res.status(500).send({ message: "Error updating review" });
+      }
+    });
+
+    // Private - Delete own review
+    app.delete("/reviews/:id", verifyFirebaseToken, async (req, res) => {
+      const id = req.params.id;
+      const renterId = req.user.uid;
+
+      try {
+        const existingReview = await reviewsCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!existingReview) {
+          return res.status(404).send({ message: "Review not found" });
+        }
+
+        if (existingReview.renterId !== renterId) {
+          return res.status(403).send({
+            message: "Forbidden: You can only delete your own reviews",
+          });
+        }
+
+        const result = await reviewsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      } catch (error) {
+        console.error("Error deleting review:", error);
+        res.status(500).send({ message: "Error deleting review" });
+      }
+    });
+
+    // Public - Get car average rating
+    app.get("/cars/:id/rating", async (req, res) => {
+      const carId = req.params.id;
+
+      try {
+        const reviews = await reviewsCollection.find({ carId }).toArray();
+
+        const totalReviews = reviews.length;
+        const averageRating =
+          totalReviews > 0
+            ? reviews.reduce((sum, review) => sum + review.rating, 0) /
+              totalReviews
+            : 0;
+
+        res.send({
+          carId,
+          averageRating: Number(averageRating.toFixed(1)),
+          totalReviews,
+        });
+      } catch (error) {
+        console.error("Error getting car rating:", error);
+        res.status(500).send({ message: "Error getting car rating" });
+      }
+    });
+
+    // Admin - Delete any review
+    app.delete(
+      "/admin/reviews/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await reviewsCollection.deleteOne(query);
+
+          if (result.deletedCount === 0) {
+            return res.status(404).send({ message: "Review not found" });
+          }
+
+          res.send({ message: "Review deleted successfully", result });
+        } catch (error) {
+          res.status(500).send({ message: "Error deleting review" });
+        }
+      }
+    );
 
     // // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
