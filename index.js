@@ -122,20 +122,25 @@ async function run() {
     // Public
     app.post("/users", async (req, res) => {
       const user = req.body;
-      const query = { email: user.email };
-      const options = { upsert: true };
+      const query = { uid: user.uid };
 
-      // Add role field - default to 'user' if not specified
-      const updateDoc = {
-        $set: {
-          ...user,
-          role: user.role || "user",
-        },
-        $setOnInsert: {
-          createdAt: new Date(),
-        },
+      // Check if user already exists
+      const existingUser = await usersCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: "User exists", user: existingUser });
+      }
+
+      // If user doesn't exist, create new user
+      const newUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        role: user.role || "user",
+        createdAt: new Date(),
       };
-      const result = await usersCollection.updateOne(query, updateDoc, options);
+
+      const result = await usersCollection.insertOne(newUser);
       res.send(result);
     });
 
